@@ -138,7 +138,9 @@ submit              # Under the root of project     # Any filename is acceptable
 ```
 
 Then zip the `submit` folder (unzip should produce a folder named `submit`, instead of any other folder name, or the
-separated jar and sql files).
+separated jar).
+**Online submission**
+You just need to submit the zip file `submit.zip`, the structure of which is as mentioned above. 
 
 Also, similar to other courses, we require you to submit your source code for academic purposes and plagiarism
 detection. Please run the `clean` task before archiving your source code, which will delete the built files.
