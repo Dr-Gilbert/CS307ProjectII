@@ -12,6 +12,7 @@ plugins {
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
+    implementation("org.springframework.boot:spring-boot-starter-web")
     // 添加OpenCSV依赖
     implementation("com.opencsv:opencsv:5.7.1")
 
@@ -44,4 +45,14 @@ tasks.register("submitJar") {
 
 tasks.clean {
     delete(fileTree("$rootDir/submit").matching { include("*.jar") })
+}
+
+// 禁用 bootJar 任务（防止打成可执行 jar）
+tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
+    enabled = false
+}
+
+// 启用普通 jar 任务（打成普通依赖库）
+tasks.named<Jar>("jar") {
+    enabled = true
 }

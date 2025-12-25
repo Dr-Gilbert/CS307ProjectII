@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>SUSTC Recipe Platform</title>
+    <!-- Element UI CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+    <!-- 如果未登录，显示登录组件 -->
+    <login-box v-if="!currentUser.id" @login-success="onLoginSuccess"></login-box>
+
+    <!-- 登录后显示主界面 -->
+    <div v-else>
+        <nav-bar :user="currentUser" @logout="onLogout"></nav-bar>
+
+        <div class="container">
+            <el-tabs v-model="activeTab">
+                <el-tab-pane label="发现食谱" name="feed">
+                    <recipe-feed :user="currentUser"></recipe-feed>
+                </el-tab-pane>
+                <el-tab-pane label="个人中心" name="profile">
+                    <user-profile :user="currentUser" @update-user="fetchUserInfo" @logout="onLogout"></user-profile>
+                </el-tab-pane>
+                <el-tab-pane label="数据统计" name="stats">
+                    <stats-board></stats-board>
+                </el-tab-pane>
+            </el-tabs>
+        </div>
+    </div>
+</div>
+
+<!-- 依赖库 -->
+<script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="https://unpkg.com/element-ui/lib/index.js"></script>
+
+<!-- 引入我们的模块 (注意顺序) -->
+<script src="js/api.js"></script>
+<script src="js/components/LoginBox.js"></script>
+<script src="js/components/NavBar.js"></script>
+<script src="js/components/RecipeDetail.js"></script>
+<script src="js/components/RecipeFeed.js"></script>
+<script src="js/components/UserProfile.js"></script>
+<script src="js/components/StatsBoard.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>

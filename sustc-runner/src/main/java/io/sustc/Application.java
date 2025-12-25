@@ -9,7 +9,7 @@ import org.springframework.boot.context.event.ApplicationStartedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.shell.ShellApplicationRunner;
 
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = "io.sustc")
 @Slf4j
 public class Application {
 
@@ -20,6 +20,15 @@ public class Application {
     @EventListener
     public void onApplicationReady(ApplicationStartedEvent event) {
         val ctx = event.getApplicationContext();
+                // --- 新增这段调试代码 ---
+        String[] beanNames = ctx.getBeanDefinitionNames();
+        log.info("Total beans: {}", beanNames.length);
+        for (String beanName : beanNames) {
+            if (beanName.contains("Controller")) {
+                log.info("Found Controller: {}", beanName);
+            }
+        }
+        // -----------------------
         val runnerBeans = ctx.getBeansOfType(ShellApplicationRunner.class);
         val benchmarkServiceBeans = ctx.getBeansOfType(BenchmarkService.class);
         log.debug("{} {}", runnerBeans, benchmarkServiceBeans);

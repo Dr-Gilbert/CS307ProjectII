@@ -118,9 +118,9 @@ public interface RecipeService {
      *
      * @param recipeId the ID of the recipe
      * @param auth     authentication identity of the operator
-     *
+     * @return
      * @throws SecurityException if {@code auth} is invalid, inactive,
-     *         or if the operator is not the recipe author
+     *                           or if the operator is not the recipe author
      */
     void deleteRecipe(long recipeId, AuthInfo auth);
 
@@ -257,5 +257,4 @@ public interface RecipeService {
      *         ingredient-heavy recipes.
      */
     List<Map<String, Object>> getTop3MostComplexRecipesByIngredients();
-
 }

@@ -9,11 +9,13 @@ plugins {
 }
 
 dependencies {
-    implementation(
-        fileTree("$rootDir/submit").matching { include("*.jar") }
-            .takeIf { !it.isEmpty } ?: project(":sustc-api")
-    )
+//    implementation(
+//        fileTree("$rootDir/submit").matching { include("*.jar") }
+//            .takeIf { !it.isEmpty } ?: project(":sustc-api")
+//    )
     runtimeOnly("org.postgresql:postgresql")
+    implementation(project(":sustc-api"))
+    implementation("org.springframework.boot:spring-boot-starter-web")
 
     implementation("org.apache.commons:commons-lang3")
     implementation("com.fasterxml.jackson.core:jackson-databind")
