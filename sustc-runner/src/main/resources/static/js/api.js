@@ -3,7 +3,7 @@ axios.defaults.baseURL = 'http://localhost:8080/api';
 
 // 简单封装一些常用请求，方便组件调用
 const API = {
-    login: (mid, password) => axios.post('/users/login', { mid, password }),
+    login: (mid, password) => axios.post('/users/login', { authorId : mid, password }),
     register: (form) => axios.post('/users/register', form),
     getUserInfo: (id) => axios.get(`/users/${id}`),
 

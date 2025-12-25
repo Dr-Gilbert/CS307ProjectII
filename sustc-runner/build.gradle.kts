@@ -8,13 +8,17 @@ plugins {
     alias(libs.plugins.lombok)
 }
 
+repositories {
+    mavenCentral()
+}
+
 dependencies {
 //    implementation(
 //        fileTree("$rootDir/submit").matching { include("*.jar") }
 //            .takeIf { !it.isEmpty } ?: project(":sustc-api")
 //    )
     runtimeOnly("org.postgresql:postgresql")
-    implementation(project(":sustc-api"))
+    implementation(project(mapOf("path" to ":sustc-api", "configuration" to "default")))
     implementation("org.springframework.boot:spring-boot-starter-web")
 
     implementation("org.apache.commons:commons-lang3")
@@ -28,6 +32,9 @@ dependencies {
     // 添加OpenCSV依赖
     implementation("com.opencsv:opencsv:5.7.1")
 }
+
+
+
 
 tasks.withType<JavaExec> {
     standardInput = System.`in`
