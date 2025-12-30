@@ -1,7 +1,6 @@
 // 全局 Axios 配置
 axios.defaults.baseURL = 'http://localhost:8080/api';
 
-// 简单封装一些常用请求，方便组件调用
 const API = {
     login: (mid, password) => axios.post('/users/login', { authorId : mid, password }),
     register: (form) => axios.post('/users/register', form),
@@ -14,7 +13,7 @@ const API = {
     getRecipeDetail: (id) => axios.get(`/recipes/${id}`),
 
     // Review
-    getReviews: (params) => axios.get('/reviews/list', { params }), // 注意这里对应刚才补充的接口
+    getReviews: (params) => axios.get('/reviews/list', { params }),
     addReview: (recipeId, data) => axios.post(`/recipes/${recipeId}/reviews`, data),
     likeReview: (reviewId, auth) => axios.post(`/reviews/${reviewId}/like`, auth),
 

@@ -109,14 +109,7 @@ Vue.component('recipe-feed', {
         };
     },
     mounted() {
-        // 如果是从搜索框过来（例如有默认keyword），直接搜索，否则加载Feed
-        if (this.keyword) {
-            this.doSearch();
-        } else {
-            // 这里我们默认加载搜索列表（因为 Feed 需要关注关系，刚注册用户可能没关注任何人导致 Feed 为空）
-            // 或者你可以保留 loadFeed() 逻辑
-            this.doSearch();
-        }
+        this.doSearch();
     },
     methods: {
         formatDate(val) {
@@ -126,10 +119,7 @@ Vue.component('recipe-feed', {
         getAuth() {
             return { authorId: this.user.authorId, password: this.user.password };
         },
-        // 处理数据加载的通用逻辑
         handleResponse(res) {
-            // 核心修复点：根据你提供的 JSON，数据直接在 res.data.items
-            // res.data 结构: { items: [...], total: 336, page: 2, size: 10 }
             const data = res.data;
             if (data && data.items) {
                 this.list = data.items;
@@ -143,8 +133,6 @@ Vue.component('recipe-feed', {
             this.loading = true;
             this.isSearch = false;
             try {
-                // 如果是 Feed 接口，请确认它的返回结构是否和 Search 一致
-                // 如果 Feed 返回结构不同，这里可能需要单独处理
                 const res = await API.getFeed(this.getAuth(), this.page, 10);
                 this.handleResponse(res);
             } catch(e) {

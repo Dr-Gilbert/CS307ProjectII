@@ -22,7 +22,6 @@ public class RecipeController {
     private RecipeService recipeService;
 
     // 1. 获取食谱详情
-    // 接口: RecipeRecord getRecipeById(long recipeId);
     @GetMapping("/{recipeId}")
     public ResponseEntity<RecipeRecord> getRecipe(@PathVariable long recipeId) {
         RecipeRecord record = recipeService.getRecipeById(recipeId);
@@ -30,7 +29,6 @@ public class RecipeController {
     }
 
     // 2. 搜索食谱
-    // 接口: PageResult<RecipeRecord> searchRecipes(...);
     @GetMapping("/search")
     public ResponseEntity<PageResult<RecipeRecord>> search(
             @RequestParam(required = false) String keyword,
@@ -48,11 +46,9 @@ public class RecipeController {
     }
 
     // 3. 创建食谱
-    // 接口: long createRecipe(RecipeRecord dto, AuthInfo auth);
     @PostMapping
     public ResponseEntity<Long> createRecipe(@RequestBody CreateRecipeReq req) {
         try {
-            // 注意参数顺序：先DTO，后Auth
             long id = recipeService.createRecipe(req.getDto(), req.getAuth());
             return ResponseEntity.ok(id);
         } catch (SecurityException e) {
@@ -63,7 +59,6 @@ public class RecipeController {
     }
 
     // 4. 删除食谱
-    // 接口: void deleteRecipe(long recipeId, AuthInfo auth);
     @DeleteMapping("/{recipeId}")
     public ResponseEntity<Void> deleteRecipe(
             @PathVariable long recipeId,
@@ -78,7 +73,6 @@ public class RecipeController {
     }
 
     // 5. 更新食谱时间
-    // 接口: void updateTimes(AuthInfo auth, long recipeId, String cookTimeIso, String prepTimeIso);
     @PutMapping("/{recipeId}/times")
     public ResponseEntity<Void> updateTimes(
             @PathVariable long recipeId,
@@ -95,20 +89,17 @@ public class RecipeController {
     }
 
     // 6. 获取卡路里最接近的配对
-    // 接口: Map<String, Object> getClosestCaloriePair();
     @GetMapping("/stats/closest-calories")
     public ResponseEntity<Map<String, Object>> getClosestCaloriePair() {
         return ResponseEntity.ok(recipeService.getClosestCaloriePair());
     }
 
     // 7. 获取配料最复杂的前3名
-    // 接口: List<Map<String, Object>> getTop3MostComplexRecipesByIngredients();
     @GetMapping("/stats/most-complex")
     public ResponseEntity<List<Map<String, Object>>> getMostComplex() {
         return ResponseEntity.ok(recipeService.getTop3MostComplexRecipesByIngredients());
     }
 
-    // DTO Helpers
     @Data
     static class CreateRecipeReq {
         private AuthInfo auth;
