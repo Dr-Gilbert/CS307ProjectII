@@ -38,7 +38,7 @@ Vue.component('user-profile', {
     `,
     data() { return { followId: '', dialogVisible: false, form: { gender: '', age: '' } }; },
     methods: {
-        getAuth() { return { mid: this.user.id, password: this.user.password }; },
+        getAuth() { return { authorId : this.user.id, password: this.user.password }; },
         async save() {
             try {
                 await API.updateProfile({ auth: this.getAuth(), gender: this.form.gender, age: this.form.age });

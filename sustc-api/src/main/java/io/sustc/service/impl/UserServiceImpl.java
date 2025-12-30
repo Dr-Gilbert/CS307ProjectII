@@ -6,21 +6,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
-import org.springframework.jdbc.support.GeneratedKeyHolder;
-import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 import javax.sql.DataSource;
-import java.sql.*;
 import java.time.*;
-import java.time.format.DateTimeParseException;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -121,6 +113,11 @@ public class UserServiceImpl implements UserService {
                 userId, userId
         );
 
+        jdbcTemplate.update(
+                "delete from like_review where AuthorId = ?",
+                userId
+        );
+
         return true;
     }
     private String getGender(String gender) {
@@ -181,21 +178,33 @@ public class UserServiceImpl implements UserService {
                 userId
         );
 
-        userRecord.setFollowingUsers(
-                jdbcTemplate.query(
-                        "select FolloweeId from follow where FollowerId = ?",
-                        (rs, i) -> rs.getLong("FolloweeId"),
-                        userId
-                ).stream().mapToLong(Long::longValue).toArray()
-        );
+        userRecord.setFollowing(jdbcTemplate.queryForObject(
+                "select count(*) from follow where followerid = ?",
+                Integer.class,
+                userId
+        ).intValue());
 
-        userRecord.setFollowerUsers(
-                jdbcTemplate.query(
-                        "select FollowerId from follow where FolloweeId = ?",
-                        (rs, i) -> rs.getLong("FollowerId"),
-                        userId
-                ).stream().mapToLong(Long::longValue).toArray()
-        );
+        userRecord.setFollowers(jdbcTemplate.queryForObject(
+                "select count(*) from follow where followeeid = ?",
+                Integer.class,
+                userId
+        ).intValue());
+
+//        userRecord.setFollowingUsers(
+//                jdbcTemplate.query(
+//                        "select FolloweeId from follow where FollowerId = ? order by FolloweeId desc",
+//                        (rs, i) -> rs.getLong("FolloweeId"),
+//                        userId
+//                ).stream().mapToLong(Long::longValue).toArray()
+//        );
+//
+//        userRecord.setFollowerUsers(
+//                jdbcTemplate.query(
+//                        "select FollowerId from follow where FolloweeId = ? order by FollowerId desc",
+//                        (rs, i) -> rs.getLong("FollowerId"),
+//                        userId
+//                ).stream().mapToLong(Long::longValue).toArray()
+//        );
 
         return userRecord;
     }
@@ -298,11 +307,6 @@ public class UserServiceImpl implements UserService {
                             category
                     ).longValue()
             );
-            for(FeedItem f : pageResult.getItems()) {
-
-                if(!pageResult.getItems().isEmpty()) log.info("check rating: {}",jdbcTemplate.queryForList("select Rating from reviews where recipeid = ?", f.getRecipeId()).toString());
-
-            }
         }
         return pageResult;
     }

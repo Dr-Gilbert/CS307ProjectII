@@ -17,15 +17,15 @@ Vue.component('login-box', {
                 </el-tab-pane>
                 <el-tab-pane label="注册" name="register">
                     <el-form label-width="60px">
-                        <el-form-item label="用户名"><el-input v-model="regForm.authorName"></el-input></el-form-item>
+                        <el-form-item label="用户名"><el-input v-model="regForm.name"></el-input></el-form-item>
                         <el-form-item label="密码"><el-input v-model="regForm.password" type="password"></el-input></el-form-item>
                         <el-form-item label="性别">
                             <el-radio-group v-model="regForm.gender">
-                                <el-radio label="Male">男</el-radio>
-                                <el-radio label="Female">女</el-radio>
+                                <el-radio label="MALE">男</el-radio>
+                                <el-radio label="FEMALE">女</el-radio>
                             </el-radio-group>
                         </el-form-item>
-                        <el-form-item label="年龄"><el-input v-model="regForm.age" type="number"></el-input></el-form-item>
+                        <el-form-item label="生日"><el-input v-model="regForm.birthday"></el-input></el-form-item>
                         <el-button type="success" style="width: 100%" @click="handleRegister">注册</el-button>
                     </el-form>
                 </el-tab-pane>
@@ -38,7 +38,7 @@ Vue.component('login-box', {
             activeName: 'login',
             loading: false,
             loginForm: { mid: '', password: '' },
-            regForm: { authorName: '', password: '', gender: 'Male', age: 20 }
+            regForm: { name: '', password: '', gender: 'Male', birthday : '2000-01-01' }
         };
     },
     methods: {

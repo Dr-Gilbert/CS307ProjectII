@@ -4,15 +4,11 @@ import io.sustc.dto.AuthInfo;
 import io.sustc.dto.PageResult;
 import io.sustc.dto.RecipeRecord;
 import io.sustc.dto.ReviewRecord;
-import io.sustc.service.RecipeService;
 import io.sustc.service.ReviewService;
-import io.sustc.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +16,7 @@ import javax.sql.DataSource;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @Slf4j
@@ -51,6 +48,7 @@ public class ReviewServiceImpl implements ReviewService {
         ))) throw new SecurityException();
     }
 
+
     @Override
     @Transactional
     public long addReview(AuthInfo auth, long recipeId, int rating, String review) {
@@ -61,7 +59,8 @@ public class ReviewServiceImpl implements ReviewService {
                 recipeId
         ))
                 || rating < 1 || rating > 5 || auth == null) throw new IllegalArgumentException();
-        return jdbcTemplate.queryForObject(
+
+        Long res = jdbcTemplate.queryForObject(
                 "insert into reviews (recipeid, authorid, rating, review, datesubmitted, datemodified) values (?,?,?,?,?,?) returning ReviewId",
                 Long.class,
                 recipeId,
@@ -70,23 +69,39 @@ public class ReviewServiceImpl implements ReviewService {
                 review,
                 Timestamp.from(Instant.now()),
                 Timestamp.from(Instant.now())
-        ).longValue();
+        );
+        refreshRecipeAggregatedRating(recipeId);
+        return res;
     }
 
     @Override
     @Transactional
     public void editReview(AuthInfo auth, long recipeId, long reviewId, int rating, String review) {
         checkAuth(auth);
-        if(jdbcTemplate.queryForObject(
-                "select AuthorId from reviews where ReviewId = ?",
-                Long.class,
-                reviewId
-        ).longValue() != auth.getAuthorId()) throw new SecurityException();
+        try {
+            if(jdbcTemplate.queryForObject(
+                    "select AuthorId from reviews where ReviewId = ?",
+                    Long.class,
+                    reviewId
+            ).longValue() != auth.getAuthorId()) throw new SecurityException();
+
+        }catch (EmptyResultDataAccessException e) {
+            throw new IllegalArgumentException();
+        }
+
+        if(Boolean.FALSE.equals(jdbcTemplate.queryForObject(
+                "select exists (select 1 from recipes where recipeid = ?)",
+                Boolean.class,
+                recipeId
+        ))) throw new IllegalArgumentException();
+
         if(jdbcTemplate.queryForObject(
                 "select RecipeId from reviews where ReviewId = ?",
                 Long.class,
                 reviewId
         ).longValue() != recipeId) throw new IllegalArgumentException();
+
+
         if(rating < 1 || rating > 5) throw new IllegalArgumentException();
         jdbcTemplate.update(
                 "update reviews set Rating = ?, Review = ?, DateModified = ? where ReviewId = ?",
@@ -95,31 +110,37 @@ public class ReviewServiceImpl implements ReviewService {
                 Timestamp.from(Instant.now()),
                 reviewId
         );
+        refreshRecipeAggregatedRating(recipeId);
     }
 
     @Override
     @Transactional
     public void deleteReview(AuthInfo auth, long recipeId, long reviewId) {
         checkAuth(auth);
-        if(Boolean.FALSE.equals(jdbcTemplate.queryForObject(
-                "select exists (select 1 from reviews where ReviewId = ?)",
-                Boolean.class,
-                reviewId
-        ))) throw new IllegalArgumentException();
-        if(jdbcTemplate.queryForObject(
-                "select AuthorId from reviews where ReviewId = ?",
-                Long.class,
-                reviewId
-        ).longValue() != auth.getAuthorId()) throw new SecurityException();
+        try {
+            if(jdbcTemplate.queryForObject(
+                    "select AuthorId from reviews where ReviewId = ?",
+                    Long.class,
+                    reviewId
+            ).longValue() != auth.getAuthorId()) throw new SecurityException();
+
+        }catch (EmptyResultDataAccessException e) {
+            throw new IllegalArgumentException();
+        }
         if(jdbcTemplate.queryForObject(
                 "select RecipeId from reviews where ReviewId = ?",
                 Long.class,
                 reviewId
         ).longValue() != recipeId) throw new IllegalArgumentException();
         jdbcTemplate.update(
+                "delete from like_review where LikeReviewId = ?",
+                reviewId
+        );
+        jdbcTemplate.update(
                 "delete from reviews where ReviewId = ?",
                 reviewId
         );
+        refreshRecipeAggregatedRating(recipeId);
     }
 
     @Override
@@ -131,6 +152,10 @@ public class ReviewServiceImpl implements ReviewService {
                 Boolean.class,
                 reviewId
         ))) throw new IllegalArgumentException();
+        if(auth.getAuthorId() == jdbcTemplate.queryForObject(
+                "select authorid from reviews where reviewid = ?",
+                Integer.class, reviewId
+        ).intValue()) throw new SecurityException();
 
 
             jdbcTemplate.update(
@@ -184,13 +209,20 @@ public class ReviewServiceImpl implements ReviewService {
         int offset = (page - 1) * size;
         if(sort.equals("likes_desc")) {
             pageResult.setItems(jdbcTemplate.query(
-                    "select r.*, u.authorname as AuthorName from reviews r\n" +
-                            "join like_review lr on r.ReviewId = lr.LikeReviewId\n" +
-                            "join users u using (AuthorId)\n" +
-                            "where RecipeId = ?\n" +
-                            "group by r.ReviewId\n" +
-                            "order by count(lr.AuthorId) desc\n " +
-                            "offset ? limit ?",
+                    """
+                            select r.*, u.AuthorName as AuthorName
+                            from (
+                                select rv.*, count(lr.AuthorId) as like_cnt
+                                from reviews rv
+                                left join like_review lr
+                                    on rv.ReviewId = lr.LikeReviewId
+                                where rv.RecipeId = ?
+                                group by rv.ReviewId
+                            ) r
+                            join users u on r.AuthorId = u.AuthorId
+                            order by r.like_cnt desc, r.reviewid desc
+                            offset ? limit ?
+                            """,
                     (rs, i) -> ReviewRecord.builder()
                             .reviewId(rs.getLong("ReviewId"))
                             .recipeId(rs.getLong("RecipeId"))
@@ -205,18 +237,15 @@ public class ReviewServiceImpl implements ReviewService {
             ));
 
             pageResult.setTotal(jdbcTemplate.queryForObject(
-                    "select count(*) from reviews r\n" +
-                            "join like_review lr on r.ReviewId = lr.LikeReviewId\n" +
-                            "where RecipeId = ?\n" +
-                            "group by r.ReviewId\n",
+                    "select count(*) from reviews where RecipeId = ? ",
                     Long.class, recipeId
             ).longValue());
         }
         else {
             pageResult.setItems(jdbcTemplate.query(
                     "select r.*, u.authorname as AuthorName from reviews r inner join users u " +
-                            "using (AuthorId) where RecipeId = ? " +
-                            "order by DateModified desc " +
+                            "on r.authorid = u.authorid where RecipeId = ? " +
+                            "order by DateModified desc, reviewid desc " +
                             "offset ? limit ?",
                     (rs, i) -> ReviewRecord.builder()
                             .reviewId(rs.getLong("ReviewId"))
@@ -283,7 +312,7 @@ public class ReviewServiceImpl implements ReviewService {
             ));
 
             recipeRecord.setRecipeIngredientParts(jdbcTemplate.query(
-                    "select Ingredient from ingredient where RecipeId = ?",
+                    "select Ingredient from ingredient where RecipeId = ? ORDER BY LOWER(Ingredient) ASC",
                     (rs, i) -> rs.getString("Ingredient"),
                     recipeId
             ).stream().toArray(String[]::new));
@@ -296,12 +325,18 @@ public class ReviewServiceImpl implements ReviewService {
     @Override
     @Transactional
     public RecipeRecord refreshRecipeAggregatedRating(long recipeId) {
-        if(Boolean.FALSE.equals(jdbcTemplate.queryForObject(
-                "select exists (select 1 from recipes where RecipeId = ?)",
-                Boolean.class,
-                recipeId
-        ))) throw new IllegalArgumentException();
-
+        Float NewAggregatedRating = jdbcTemplate.queryForObject(
+                "select round(avg(rating)::numeric, 2) from reviews where recipeid = ?",
+                Float.class, recipeId
+        );
+        Integer NewReviewCount = jdbcTemplate.queryForObject(
+                "select count(*) from reviews where recipeid = ?",
+                Integer.class, recipeId
+        );
+        jdbcTemplate.update(
+                "update recipes set aggregatedrating = ?, reviewcount = ? where recipeid = ?",
+                NewAggregatedRating, NewReviewCount, recipeId
+        );
         return getRecipeById(recipeId);
     }
 

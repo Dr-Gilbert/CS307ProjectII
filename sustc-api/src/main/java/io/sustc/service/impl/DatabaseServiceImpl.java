@@ -7,14 +7,11 @@ import io.sustc.service.DatabaseService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.*;
-import java.time.Instant;
 import java.util.*;
 import javax.sql.DataSource;
 import java.sql.PreparedStatement;
@@ -64,6 +61,20 @@ public class DatabaseServiceImpl implements DatabaseService {
         // ddl to create tables.
         createTables();
 
+
+//        log.info("Import completed: users={}, recipes={}, reviews={}",
+//                userRecords == null ? 0 : userRecords.size(),
+//                recipeRecords == null ? 0 : recipeRecords.size(),
+//                reviewRecords == null ? 0 : reviewRecords.size());
+
+//        for (ReviewRecord r : reviewRecords) {
+//            if(r.getRecipeId() == 454) log.info("review rating: {}",r.getRating());
+//        }
+
+//        for (int i = 4136; i < 4137; i++) {
+//            log.info("aggr {}: {}",i,recipeRecords.get(i).getAggregatedRating());
+//        }
+
         // Basic validations
         if ((userRecords == null || userRecords.isEmpty())
                 && (recipeRecords == null || recipeRecords.isEmpty())
@@ -102,8 +113,8 @@ public class DatabaseServiceImpl implements DatabaseService {
 
         // 2) Insert recipes
         if (recipeRecords != null && !recipeRecords.isEmpty()) {
-            final String recipeSql = "INSERT INTO recipes (Name, AuthorId, CookTime, PrepTime, TotalTime, DatePublished, Description, RecipeCategory, Calories, FatContent, SaturatedFatContent, CholesterolContent, SodiumContent, CarbohydrateContent, FiberContent, SugarContent, ProteinContent, RecipeServings, RecipeYield) " +
-                    "VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            final String recipeSql = "INSERT INTO recipes (Name, AuthorId, CookTime, PrepTime, TotalTime, DatePublished, Description, RecipeCategory, Calories, FatContent, SaturatedFatContent, CholesterolContent, SodiumContent, CarbohydrateContent, FiberContent, SugarContent, ProteinContent, RecipeServings, RecipeYield, aggregatedrating, reviewcount) " +
+                    "VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
             jdbcTemplate.batchUpdate(recipeSql, new BatchPreparedStatementSetter() {
                 @Override
@@ -129,6 +140,8 @@ public class DatabaseServiceImpl implements DatabaseService {
                     // RecipeServings in createTables is VARCHAR(100) in this implementation; DTO has int - write as int
                     ps.setInt(18, r.getRecipeServings());
                     ps.setString(19, r.getRecipeYield());
+                    ps.setFloat(20, r.getAggregatedRating());
+                    ps.setInt(21, r.getReviewCount());
                 }
 
                 @Override
@@ -232,99 +245,91 @@ public class DatabaseServiceImpl implements DatabaseService {
         // Build pairs from UserRecord.followerUsers and followingUsers
         if (userRecords != null && !userRecords.isEmpty()) {
             // Use a set to deduplicate pairs
-            Set<Long> pairSet = new HashSet<>(); // encode (follower << 32) | following might overflow; use string key
-            List<Map.Entry<Long, Long>> follows = new ArrayList<>();
+            List<long[]> follows = new ArrayList<>();
+
             for (UserRecord u : userRecords) {
                 long author = u.getAuthorId();
+
                 long[] followers = u.getFollowerUsers();
                 if (followers != null) {
                     for (long f : followers) {
-                        if (f == author) continue;
-                        String key = f + ":" + author;
-                        if (pairSet.add(key.hashCode() * 31L + key.length())) {
-                            follows.add(new AbstractMap.SimpleEntry<>(f, author));
-                        } else {
-                            // avoid duplicates using string-set instead for correctness
+                        if (f != author) {
+                            follows.add(new long[]{f, author});
                         }
                     }
                 }
+
                 long[] following = u.getFollowingUsers();
                 if (following != null) {
                     for (long fo : following) {
-                        if (fo == author) continue;
-                        String key = author + ":" + fo;
-                        if (pairSet.add(key.hashCode() * 31L + key.length())) {
-                            follows.add(new AbstractMap.SimpleEntry<>(author, fo));
+                        if (fo != author) {
+                            follows.add(new long[]{author, fo});
                         }
                     }
                 }
             }
 
-            // Better dedup using explicit string set (recompute properly)
-            Set<String> seen = new HashSet<>();
-            List<Map.Entry<Long, Long>> filtered = new ArrayList<>();
-            for (Map.Entry<Long, Long> e : follows) {
-                String k = e.getKey() + ":" + e.getValue();
-                if (!seen.contains(k)) {
-                    seen.add(k);
-                    filtered.add(e);
-                }
-            }
+            if (!follows.isEmpty()) {
+                final String followSql =
+                        "INSERT INTO follow (FollowerId, FolloweeId) VALUES (?, ?) ON CONFLICT DO NOTHING";
 
-            if (!filtered.isEmpty()) {
-                final String followSql = "INSERT INTO follow (FollowerId, FolloweeId) VALUES (?, ?) ON CONFLICT DO NOTHING";
                 jdbcTemplate.batchUpdate(followSql, new BatchPreparedStatementSetter() {
                     @Override
                     public void setValues(PreparedStatement ps, int i) throws SQLException {
-                        Map.Entry<Long, Long> e = filtered.get(i);
-                        ps.setLong(1, e.getKey());
-                        ps.setLong(2, e.getValue());
+                        ps.setLong(1, follows.get(i)[0]);
+                        ps.setLong(2, follows.get(i)[1]);
                     }
 
                     @Override
                     public int getBatchSize() {
-                        return filtered.size();
+                        return follows.size();
                     }
                 });
             }
 
+
             // Optionally, ensure Followers/Following counters match provided userRecords (some schemas expect these fields to be prefilled).
             // We'll update all users' counters from the provided DTO values to be safe.
-            final String updateCountSql = "UPDATE users SET FollowerCount = ?, FolloweeCount = ? WHERE AuthorId = ?";
-            jdbcTemplate.batchUpdate(updateCountSql, new BatchPreparedStatementSetter() {
-                @Override
-                public void setValues(PreparedStatement ps, int i) throws SQLException {
-                    UserRecord u = userRecords.get(i);
-                    ps.setLong(1, u.getFollowers());
-                    ps.setLong(2, u.getFollowing());
-                    ps.setLong(3, u.getAuthorId());
-                }
-
-                @Override
-                public int getBatchSize() {
-                    return userRecords.size();
-                }
-            });
+//            final String updateCountSql = "UPDATE users SET FollowerCount = ?, FolloweeCount = ? WHERE AuthorId = ?";
+//            jdbcTemplate.batchUpdate(updateCountSql, new BatchPreparedStatementSetter() {
+//                @Override
+//                public void setValues(PreparedStatement ps, int i) throws SQLException {
+//                    UserRecord u = userRecords.get(i);
+//                    ps.setLong(1, u.getFollowers());
+//                    ps.setLong(2, u.getFollowing());
+//                    ps.setLong(3, u.getAuthorId());
+//                }
+//
+//                @Override
+//                public int getBatchSize() {
+//                    return userRecords.size();
+//                }
+//            });
         }
 
         // 7) (Optional) Recompute ratings from reviews to ensure consistency (if rating trigger not present)
         // We'll compute aggregated rating and review count per recipe from inserted reviews to be safe.
-        try {
-            String recomputeSql = "UPDATE recipes r SET (AggregatedRating, ReviewCount) = (" +
-                    "  COALESCE(t.avg_rating, 0), COALESCE(t.cnt, 0)) " +
-                    "FROM (" +
-                    "  SELECT RecipeId, ROUND(AVG(Rating)::numeric * 2) / 2 AS avg_rating, COUNT(*) AS cnt " +
-                    "  FROM reviews GROUP BY RecipeId" +
-                    ") t WHERE r.RecipeId = t.RecipeId";
-            jdbcTemplate.update(recomputeSql);
-        } catch (Exception ex) {
-            log.warn("Failed to recompute recipe ratings - continuing. Reason: {}", ex.getMessage());
-        }
+//        try {
+//            String recomputeSql = "UPDATE recipes r SET (AggregatedRating, ReviewCount) = (" +
+//                    "  COALESCE(t.avg_rating, 0), COALESCE(t.cnt, 0)) " +
+//                    "FROM (" +
+//                    "  SELECT RecipeId, ROUND(AVG(Rating)::numeric * 2) / 2 AS avg_rating, COUNT(*) AS cnt " +
+//                    "  FROM reviews GROUP BY RecipeId" +
+//                    ") t WHERE r.RecipeId = t.RecipeId";
+//            jdbcTemplate.update(recomputeSql);
+//        } catch (Exception ex) {
+//            log.warn("Failed to recompute recipe ratings - continuing. Reason: {}", ex.getMessage());
+//        }
 
-        log.info("Import completed: users={}, recipes={}, reviews={}",
-                userRecords == null ? 0 : userRecords.size(),
-                recipeRecords == null ? 0 : recipeRecords.size(),
-                reviewRecords == null ? 0 : reviewRecords.size());
+
+        log.info("Actually data size: user={},recipes={},reviews={},cnt={}",
+                jdbcTemplate.queryForObject("select count(*) from users",Integer.class),
+                jdbcTemplate.queryForObject("select count(*) from recipes",Integer.class),
+                jdbcTemplate.queryForObject("select count(*) from reviews",Integer.class));
+
+//        int aggrcnt = 0;
+//        for(RecipeRecord r : recipeRecords) if(r.getAggregatedRating() != 0) aggrcnt++;
+//        log.info(" aggr count: {}" , aggrcnt);
 
     }
 
@@ -414,15 +419,6 @@ public class DatabaseServiceImpl implements DatabaseService {
                 "create index recipes_rating_index on recipes(AggregatedRating desc);",
                 "create index recipes_date_index on recipes(DatePublished desc);",
 
-                "create table keyword (\n" +
-                        "    RecipeId bigint,\n" +
-                        "    Keyword varchar,\n" +
-                        "    constraint pk_keyword primary key (RecipeId, Keyword),\n" +
-                        "    constraint fk_keyword_recipe foreign key (RecipeId) references recipes(RecipeId) on delete cascade \n" +
-                        ");",
-
-                "create index keyword_recipes_index on keyword(Keyword);",
-
                 "create table ingredient (\n" +
                         "    RecipeId bigint,\n" +
                         "    Ingredient varchar,\n" +
@@ -444,37 +440,6 @@ public class DatabaseServiceImpl implements DatabaseService {
                         "    constraint fk1_reviews foreign key (RecipeId) references recipes on delete cascade ,\n" +
                         "    constraint fk2_reviews foreign key (AuthorId) references users\n" +
                         ");",
-
-                "create or replace function rating_adapter(id BIGINT)\n" +
-                        "returns void as $$\n" +
-                        "begin\n" +
-                        "    update recipes set\n" +
-                        "    AggregatedRating = avg_rating,\n" +
-                        "    ReviewCount = cnt\n" +
-                        "    from (\n" +
-                        "        select round(avg(rating)::numeric * 2) / 2 as avg_rating,\n" +
-                        "               count(*) as cnt\n" +
-                        "        from reviews where RecipeId = id\n" +
-                        "         ) t1\n" +
-                        "    where RecipeId = id;\n" +
-                        "end;\n" +
-                        "$$ language plpgsql;",
-
-                "create or replace function rating_select()\n" +
-                        "returns trigger as $$\n" +
-                        "begin\n" +
-                        "    if tg_op = 'INSERT' then perform rating_adapter(new.RecipeId);\n" +
-                        "    elsif tg_op = 'UPDATE' then perform rating_adapter(new.RecipeId);\n" +
-                        "    elsif tg_op = 'DELETE' then perform rating_adapter(old.RecipeId);\n" +
-                        "    end if;\n" +
-                        "    return null;\n" +
-                        "end;\n" +
-                        "$$ language plpgsql;",
-
-                "create or replace trigger rating_trigger\n" +
-                        "after insert or update or delete on reviews\n" +
-                        "for each row\n" +
-                        "execute function rating_select();",
 
                 "create table like_review (\n" +
                         "    AuthorId bigint,\n" +

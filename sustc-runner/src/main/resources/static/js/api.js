@@ -21,9 +21,9 @@ const API = {
     // User Actions
     updateProfile: (data) => axios.put('/users/profile', data),
     deleteAccount: (id, auth) => axios.delete(`/users/${id}`, { data: auth }),
-    follow: (id, auth) => axios.post(`/users/${id}/follow`, auth),
+    follow: (id, auth) => axios.post(`/users/follow/${id}`, auth),
 
     // Stats
-    getTopInfluencer: () => axios.get('/users/highest-ratio'),
+    getTopInfluencer: () => axios.get('/users/highest-follow-ratio'),
     getComplexRecipes: () => axios.get('/recipes/most-complex')
 };

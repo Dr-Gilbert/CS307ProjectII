@@ -26,6 +26,7 @@ dependencies {
     // 依然引用 Spring Boot Starter，但作为普通库引用
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springdoc:springdoc-openapi-ui:1.7.0")
 
     implementation("com.opencsv:opencsv:5.7.1")
     implementation("org.furyio:fury-core:0.3.1")

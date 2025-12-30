@@ -2,25 +2,23 @@ package io.sustc.service.impl;
 
 import io.sustc.dto.*;
 import io.sustc.service.RecipeService;
-import io.sustc.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
-import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 import javax.sql.DataSource;
+import java.awt.geom.Arc2D;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.*;
+import java.time.DateTimeException;
 import java.time.Duration;
-import java.time.format.DateTimeParseException;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -101,7 +99,7 @@ public class RecipeServiceImpl implements RecipeService {
             ));
 
             recipeRecord.setRecipeIngredientParts(jdbcTemplate.query(
-                    "select Ingredient from ingredient where RecipeId = ?",
+                    "select Ingredient from ingredient where RecipeId = ? ORDER BY LOWER(Ingredient) ASC",
                     (rs, i) -> rs.getString("Ingredient"),
                     recipeId
             ).stream().toArray(String[]::new));
@@ -216,13 +214,13 @@ public class RecipeServiceImpl implements RecipeService {
         if (sort != null) {
             switch (sort) {
                 case "rating_desc":
-                    orderBy = " ORDER BY r.AggregatedRating DESC NULLS LAST, r.RecipeId ASC ";
+                    orderBy = " ORDER BY r.AggregatedRating DESC NULLS LAST, r.RecipeId DESC ";
                     break;
                 case "date_desc":
-                    orderBy = " ORDER BY r.DatePublished DESC NULLS LAST, r.RecipeId ASC ";
+                    orderBy = " ORDER BY r.DatePublished DESC NULLS LAST, r.RecipeId DESC ";
                     break;
                 case "calories_asc":
-                    orderBy = " ORDER BY r.Calories ASC NULLS LAST, r.RecipeId ASC ";
+                    orderBy = " ORDER BY r.Calories ASC NULLS LAST, r.RecipeId DESC ";
                     break;
                 default:
                     // keep default
@@ -260,6 +258,10 @@ public class RecipeServiceImpl implements RecipeService {
                 .size(size)
                 .total(total)
                 .build();
+
+        for(RecipeRecord r : result.getItems()) {
+
+        }
 
         return result;
     }
@@ -299,10 +301,7 @@ public class RecipeServiceImpl implements RecipeService {
                     dto.getRecipeYield()
             ).longValue();
             String[] parts = dto.getRecipeIngredientParts();
-            if (parts != null) {
-                Arrays.sort(parts, String::compareToIgnoreCase);
-            }
-            else return id;
+            if (parts == null) return id;
             jdbcTemplate.batchUpdate(
                     "INSERT INTO ingredient (RecipeId, Ingredient) VALUES (?, ?) ON CONFLICT DO NOTHING",
                     new BatchPreparedStatementSetter() {
@@ -347,6 +346,12 @@ public class RecipeServiceImpl implements RecipeService {
     }
 
     private long getRecipeAuthorIdOrThrow(long recipeId) {
+        if(Boolean.FALSE.equals(jdbcTemplate.queryForObject(
+                "select exists (select 1 from recipes where recipeid = ?)",
+                Boolean.class,
+                recipeId
+        ))) throw new IllegalArgumentException();
+
         Long authorId = jdbcTemplate.queryForObject(
                 "SELECT AuthorId FROM recipes WHERE RecipeId = ?",
                 Long.class,
@@ -370,8 +375,8 @@ public class RecipeServiceImpl implements RecipeService {
         Duration cook = null, prep = null;
 
         try {
-            cook = cookTimeIso == null ? Duration.ZERO : Duration.parse(cookTimeIso);
-            prep = prepTimeIso == null ? Duration.ZERO : Duration.parse(prepTimeIso);
+            cook = cookTimeIso == null ? null : Duration.parse(cookTimeIso);
+            prep = prepTimeIso == null ? null : Duration.parse(prepTimeIso);
         }  catch (Exception e) {
             throw new IllegalArgumentException();
         }
@@ -384,15 +389,15 @@ public class RecipeServiceImpl implements RecipeService {
         String existingPrep = null;
         if (cook == null || prep == null) {
             Map<String, Object> row = jdbcTemplate.queryForMap("SELECT CookTime, PrepTime FROM recipes WHERE RecipeId = ?", recipeId);
-            existingCook = (String) row.get("CookTime");
-            existingPrep = (String) row.get("PrepTime");
+            existingCook = ((String) row.get("CookTime")).trim();
+            existingPrep = ((String) row.get("PrepTime")).trim();
             try {
-                if (cook == null && existingCook != null) cook = Duration.parse(existingCook);
+                if (cook == null && existingCook != null && !existingCook.isEmpty()) cook = Duration.parse(existingCook);
             } catch (Exception e) {
                 throw new IllegalArgumentException();
             }
             try {
-                if (prep == null && existingPrep != null) prep = Duration.parse(existingPrep);
+                if (prep == null && existingPrep != null && !existingPrep.isEmpty()) prep = Duration.parse(existingPrep);
             } catch (Exception e) {
                 throw new IllegalArgumentException();
             }
@@ -418,24 +423,39 @@ public class RecipeServiceImpl implements RecipeService {
     @Override
     public Map<String, Object> getClosestCaloriePair() {
         List<Map<String, Object>> list = jdbcTemplate.queryForList(
-                "select r1.RecipeId as RecipeA, r2.RecipeId as RecipeB, r1.Calories as CaloriesA, r2.Calories as CaloriesB, abs(r1.Calories - r2.Calories) as Difference\n" +
-                        "from recipes r1 join recipes r2 on (r1.RecipeId < r2.RecipeId)\n" +
-                        "where r1.Calories is not null and r2.Calories is not null\n" +
-                        "order by Difference asc, r1.RecipeId asc, r2.RecipeId asc\n" +
-                        "limit 1"
+                """
+                        select r1.RecipeId as "RecipeA", r2.RecipeId as "RecipeB", r1.Calories as "CaloriesA", r2.Calories as "CaloriesB", abs(r1.Calories - r2.Calories) as "Difference"
+                        from recipes r1 join recipes r2 on (r1.RecipeId < r2.RecipeId)
+                        where r1.Calories is not null and r2.Calories is not null
+                        order by "Difference" asc, r1.RecipeId asc, r2.RecipeId asc
+                        limit 1
+                    """
         );
+        for(Map<String, Object> mp : list) {
+            Double originCA = (Double) mp.get("CaloriesA"), originCB = (Double) mp.get("CaloriesB"), diff = (Double) mp.get("Difference");
+            mp.replace("CaloriesA", (Double) (new BigDecimal(originCA == null ? "0.0" : originCA.toString()).setScale(2, RoundingMode.HALF_UP).doubleValue()));
+            mp.replace("CaloriesB", (Double) (new BigDecimal(originCB == null ? "0.0" : originCB.toString()).setScale(2, RoundingMode.HALF_UP).doubleValue()));
+            mp.replace("Difference", (Double) (new BigDecimal(diff == null ? "0.0" : diff.toString()).setScale(2, RoundingMode.HALF_UP).doubleValue()));
+        }
         return (list.isEmpty() ? null : list.get(0));
     }
 
     @Override
     public List<Map<String, Object>> getTop3MostComplexRecipesByIngredients() {
-        return jdbcTemplate.queryForList(
-                "SELECT r.RecipeId AS RecipeId, r.Name AS Name, COUNT(ri.Ingredient) AS IngredientCount " +
-                        "FROM ingredient ri JOIN recipes r ON ri.RecipeId = r.RecipeId " +
-                        "GROUP BY r.RecipeId, r.Name " +
-                        "ORDER BY IngredientCount DESC, r.RecipeId ASC " +
-                        "LIMIT 3"
+         List<Map<String, Object>> res = jdbcTemplate.queryForList(
+                """
+                        SELECT r.RecipeId AS "RecipeId", COUNT(ri.Ingredient) AS "IngredientCount", r.Name AS "Name"
+                        FROM ingredient ri JOIN recipes r ON ri.RecipeId = r.RecipeId
+                        GROUP BY r.RecipeId, r.Name
+                        ORDER BY "IngredientCount" DESC, r.RecipeId ASC 
+                        LIMIT 3
+                    """
         );
+         for(Map<String, Object> mp : res) {
+             Integer val = ((Long) mp.get("IngredientCount")).intValue();
+             mp.replace("IngredientCount", val);
+         }
+         return res;
     }
 
 
